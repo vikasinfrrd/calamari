@@ -1,22 +1,7 @@
 import numpy as np
 from calamari_ocr.ocr.data_processing.data_preprocessor import DataPreprocessor
-from scipy.ndimage import measurements, interpolation, filters
-
-
-def scale_to_h(img, target_height, order=1, dtype=np.dtype('f'), cval=0):
-    h, w = img.shape
-    scale = target_height * 1.0 / h
-    target_width = np.maximum(int(scale * w), 1)
-    output = interpolation.affine_transform(
-        1.0 * img,
-        np.eye(2) / scale,
-        order=order,
-        output_shape=(target_height,target_width),
-        mode='constant',
-        cval=cval)
-
-    output = np.array(output, dtype=dtype)
-    return output
+from calamari_ocr.ocr.data_processing.scale_to_height_processor import ScaleToHeightProcessor
+from scipy.ndimage import filters
 
 
 class CenterNormalizer(DataPreprocessor):
@@ -36,7 +21,6 @@ class CenterNormalizer(DataPreprocessor):
         h, w = line.shape
         smoothed = filters.gaussian_filter(line, (h * 0.5, h * self.smoothness), mode='constant')
         smoothed += 0.001 * filters.uniform_filter(smoothed, (h * 0.5, w), mode='constant')
-        shape = (h, w)
         a = np.argmax(smoothed, axis=0)
         a = filters.gaussian_filter(a, h * self.extra)
         center = np.array(a, 'i')
@@ -70,12 +54,12 @@ class CenterNormalizer(DataPreprocessor):
         # resize the image to a appropriate height close to the target height to speed up dewarping
         intermediate_height = int(self.target_height * 1.5)
         if intermediate_height < img.shape[0]:
-            img = scale_to_h(img, intermediate_height, order=order, dtype=dtype, cval=cval)
+            img = ScaleToHeightProcessor.scale_to_h(img, intermediate_height, order=order, dtype=dtype, cval=cval)
 
         # dewarp
         dewarped = self.dewarp(img, cval=cval, dtype=dtype)
 
         # scale to target height
-        scaled = scale_to_h(dewarped, self.target_height, order=order, dtype=dtype, cval=cval)
+        scaled = ScaleToHeightProcessor.scale_to_h(dewarped, self.target_height, order=order, dtype=dtype, cval=cval)
         return scaled
 

@@ -1,3 +1,4 @@
+from calamari_ocr.ocr.data_processing.scale_to_height_processor import ScaleToHeightProcessor
 from calamari_ocr.ocr.data_processing.center_normalizer import CenterNormalizer
 from calamari_ocr.ocr.data_processing.data_preprocessor import DataPreprocessor, NoopDataPreprocessor, MultiDataProcessor
 from calamari_ocr.ocr.data_processing.data_range_normalizer import DataRangeNormalizer
@@ -22,7 +23,9 @@ def data_processor_from_proto(data_preprocessor_params):
     elif data_preprocessor_params.type == DataPreprocessorParams.CENTER_NORMALIZER:
         return CenterNormalizer(data_preprocessor_params.line_height)
     elif data_preprocessor_params.type == DataPreprocessorParams.FINAL_PREPARATION:
-        return FinalPreparation()
+        return FinalPreparation(pad=data_preprocessor_params.pad)
+    elif data_preprocessor_params.type == DataPreprocessorParams.SCALE_TO_HEIGHT:
+        return ScaleToHeightProcessor(data_preprocessor_params.line_height)
 
     raise Exception("Unknown proto type {} of an data processor".format(data_preprocessor_params.type))
 

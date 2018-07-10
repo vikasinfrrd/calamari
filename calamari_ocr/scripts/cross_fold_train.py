@@ -28,7 +28,7 @@ def train_individual_model(run_args):
     ], args["run"], {"threads": args['num_threads']}), verbose=args["verbose"]):
         # Print the output of the thread
         if args["verbose"]:
-            print("FOLD {} | {}".format(args["id"], line))
+            print("FOLD {} | {}".format(args["id"], line), end="")
 
     return args
 
@@ -68,6 +68,7 @@ def main(args=None):
                                  "from scratch")
         parser.add_argument("--single_fold", type=int, nargs="+", default=[],
                             help="Only train a single (list of single) specific fold(s).")
+        parser.add_argument("--train_script", type=str, default=os.path.join(this_absdir, "train.py"))
 
         # add the training args (omit those params, that are set by the cross fold training)
         setup_train_args(parser, omit=["files", "validation", "weights",
@@ -109,11 +110,8 @@ def main(args=None):
     if not os.path.exists(args.best_models_dir):
         os.makedirs(args.best_models_dir)
 
-    # locate the training script (must be in the same dir as "this")
-    train_script_path = os.path.join(this_absdir, "train.py")
-
-    if not os.path.exists(train_script_path):
-        raise Exception("Missing train script path. Expected 'train.py' at {}".format(this_absdir))
+    if not os.path.exists(args.train_script):
+        raise Exception("Missing train script path. Expected 'train.py' at {}".format(args.train_script))
 
     # Compute the files in the cross fold (create a CrossFold)
     fold_file = os.path.join(args.temporary_dir, "folds.json")
@@ -132,7 +130,6 @@ def main(args=None):
             fold_args["id"] = fold
             fold_args["files"] = train_files
             fold_args["validation"] = test_files
-            fold_args["train_script"] = train_script_path
             fold_args["verbose"] = True
             fold_args["output_dir"] = os.path.join(args.temporary_dir, "fold_{}".format(fold))
             fold_args["early_stopping_best_model_output_dir"] = args.best_models_dir

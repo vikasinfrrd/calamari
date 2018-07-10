@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from calamari_ocr.utils import parallel_map
 
+import matplotlib.pyplot as plt
 
 class DataAugmenter(ABC):
     def __init__(self):
@@ -55,4 +56,8 @@ class SimpleDataAugmenter(DataAugmenter):
             noise = ocrodeg.bounded_gaussian_noise(data.shape, sigma, 3.0)
             data = ocrodeg.distort_with_noise(data, noise)
 
-        return ocrodeg.printlike_multiscale(data, inverted=True), gt_txt
+        # TODO: FIX
+        # out = ocrodeg.printlike_multiscale(data, inverted=True)
+        out = data
+
+        return out, gt_txt

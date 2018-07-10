@@ -15,7 +15,7 @@ from calamari_ocr.proto import CheckpointParams, DataPreprocessorParams, TextPro
 
 def setup_train_args(parser, omit=[]):
     if "files" not in omit:
-        parser.add_argument("--files", nargs="+",
+        parser.add_argument("--files", nargs="+", required=True,
                             help="List all image files that shall be processed. Ground truth fils with the same "
                                  "base name but with '.gt.txt' as extension are required at the same location")
 
