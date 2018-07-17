@@ -33,8 +33,8 @@ class PredictionResult:
         self.codec = codec
         self.text_postproc = text_postproc
         self.chars = codec.decode(prediction.labels)
-        self.sentence = self.text_postproc.apply("".join(self.chars))
-        self.prediction.sentence = self.sentence
+        self.sentence = self.text_postproc.apply_single(self.chars)
+        self.prediction.sentence[:] = self.sentence
 
         for p in self.prediction.positions:
             for c in p.chars:

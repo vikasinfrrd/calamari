@@ -5,7 +5,14 @@ from calamari_ocr.ocr import FileDataSet, Trainer
 from calamari_ocr.ocr.augmentation.data_augmenter import SimpleDataAugmenter
 from calamari_ocr.proto import CheckpointParams, DataPreprocessorParams, TextProcessorParams, \
     network_params_from_definition_string, NetworkParams
-from calamari_ocr.omr.omr_codec import SimpleAncientCodec
+
+charset = [
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",   # Note positions
+    "(", ")", " ",                                      # Compound/connected notes
+    "F1", "F3", "F5", "F7",                             # F-Clef with position
+    "C1", "C3", "C5", "C7",                             # C-Clef with position
+]
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -84,7 +91,11 @@ def run(args):
     final_prep_params.pad = args.pad
 
     # Text pre processing (reading)
-    params.model.text_preprocessor.type = TextProcessorParams.NOOP_NORMALIZER
+    params.model.text_preprocessor.type = TextProcessorParams.MULTI_NORMALIZER
+    params.model.text_preprocessor.children.add().type = TextProcessorParams.STRIP_NORMALIZER
+    str_to_char_list = params.model.text_preprocessor.children.add()
+    str_to_char_list.type = TextProcessorParams.STR_TO_CHAR_LIST
+    str_to_char_list.characters[:] = sorted(charset, key=lambda a: -len(a))
 
     # Text post processing (prediction)
     params.model.text_postprocessor.type = TextProcessorParams.STRIP_NORMALIZER
@@ -108,7 +119,6 @@ def run(args):
                       data_augmenter=SimpleDataAugmenter(),
                       n_augmentations=args.n_augmentations,
                       weights=args.weights,
-                      codec=SimpleAncientCodec(),
                       )
     trainer.train(progress_bar=not args.no_progress_bars)
 

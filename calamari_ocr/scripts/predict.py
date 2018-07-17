@@ -54,14 +54,15 @@ def run(args):
         prediction = voter.vote_prediction_result(result)
         prediction.id = "voted"
         sentence = prediction.sentence
+        flat_sentence = "".join(sentence)
         if args.verbose:
             lr = "\u202A\u202B"
-            print("{}: '{}{}{}'".format(sample['id'], lr[get_base_level(sentence)], sentence, "\u202C" ))
+            print("{}: '{}{}{}'".format(sample['id'], lr[get_base_level(flat_sentence)], flat_sentence, "\u202C" ))
 
         output_dir = args.output_dir if args.output_dir else os.path.dirname(filepath)
 
         with codecs.open(os.path.join(output_dir, sample['id'] + ".pred.txt"), 'w', 'utf-8') as f:
-            f.write(sentence)
+            f.write(flat_sentence)
 
         if args.extended_prediction_data:
             ps = Predictions()

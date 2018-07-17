@@ -1,12 +1,12 @@
 from edit_distance import edit_distance
 
 from calamari_ocr.ocr.text_processing import synchronize
-from calamari_ocr.ocr.text_processing import DefaultTextPreprocessor
+from calamari_ocr.ocr.text_processing import DefaultTextPostprocessor
 from calamari_ocr.utils import parallel_map
 
 
 class Evaluator:
-    def __init__(self, text_preprocessor=None):
+    def __init__(self, text_postprocessor=None):
         """ Class to evaluation the CER and errors of two datasets
 
         Parameters
@@ -14,24 +14,21 @@ class Evaluator:
         text_preprocessor : TextProcessor
             a text preprocessor to apply before computing the errors
         """
-        self.text_preprocessor = text_preprocessor if text_preprocessor is not None else DefaultTextPreprocessor()
+        self.text_postprocessor = text_postprocessor if text_postprocessor is not None else DefaultTextPostprocessor()
         self.preloaded_gt = None
 
-    def preload_gt(self, gt_dataset, progress_bar=False):
-        """ Preload gt to be used for several experiments
+    def set_preloaded_gt(self, gt, processes=1, progress_bar=False):
+        """ Preloaded gt to be used for several experiments
 
         Use this method to specify ground truth data to be tested versus many predictions
 
         Parameters
         ----------
-        gt_dataset : Dataset
+        gt : Dataset
             the ground truth
-        progress_bar : bool, optional
-            show a progress bar
 
         """
-        gt_dataset.load_samples(progress_bar=progress_bar)
-        self.preloaded_gt = self.text_preprocessor.apply(gt_dataset.text_samples(), progress_bar=progress_bar)
+        self.preloaded_gt = self.text_postprocessor.apply(gt, processes=processes, progress_bar=progress_bar)
 
     def run(self, _sentinel=None, gt_dataset=None, pred_dataset=None, processes=1, progress_bar=False):
         """ evaluate on the given dataset
@@ -60,10 +57,10 @@ class Evaluator:
             gt_data = self.preloaded_gt
         else:
             gt_dataset.load_samples(progress_bar=progress_bar)
-            gt_data = self.text_preprocessor.apply(gt_dataset.text_samples(), progress_bar=progress_bar)
+            gt_data = self.text_postprocessor.apply(gt_dataset.text_samples(), progress_bar=progress_bar)
 
         pred_dataset.load_samples(progress_bar=progress_bar)
-        pred_data = self.text_preprocessor.apply(pred_dataset.text_samples(), progress_bar=progress_bar)
+        pred_data = self.text_postprocessor.apply(pred_dataset.text_samples(), progress_bar=progress_bar)
 
         return self.evaluate(gt_data=gt_data, pred_data=pred_data, processes=processes, progress_bar=progress_bar)
 
@@ -95,7 +92,7 @@ class Evaluator:
         for sync in synclist:
             gt_str, pred_str = sync.get_text()
             if gt_str != pred_str:
-                key = (gt_str, pred_str)
+                key = (tuple(gt_str), tuple(pred_str))
                 total_sync_errs += max(len(gt_str), len(pred_str))
                 if key not in confusion:
                     confusion[key] = 1

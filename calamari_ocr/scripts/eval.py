@@ -64,8 +64,8 @@ def write_xlsx(xlsx_file, eval_datas):
         all_cs = []
         for i, ((len_gt, errs, sync_errs, confusion), gt_file, gt, pred) in enumerate(sorted_lines):
             ws.write(i + 1, 0, gt_file)
-            ws.write(i + 1, 1, gt.strip())
-            ws.write(i + 1, 2, pred.strip())
+            ws.write(i + 1, 1, "".join(gt).strip())
+            ws.write(i + 1, 2, "".join(pred).strip())
             ws.write(i + 1, 3, len_gt)
             ws.write(i + 1, 4, errs)
             ws.write(i + 1, 5, errs / max(len(gt), len(pred)))
@@ -82,6 +82,7 @@ def write_xlsx(xlsx_file, eval_datas):
         keys = sorted(r['confusion'].items(), key=lambda item: -item[1])
 
         for i, ((gt, pred), count) in enumerate(keys):
+            gt, pred = "".join(gt), "".join(pred)
             gt_fmt = "{" + gt + "}"
             pred_fmt = "{" + pred + "}"
 

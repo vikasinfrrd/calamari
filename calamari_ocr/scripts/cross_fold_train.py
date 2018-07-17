@@ -110,8 +110,9 @@ def main(args=None):
     if not os.path.exists(args.best_models_dir):
         os.makedirs(args.best_models_dir)
 
+    args.train_script = os.path.join(this_absdir, args.train_script)
     if not os.path.exists(args.train_script):
-        raise Exception("Missing train script path. Expected 'train.py' at {}".format(args.train_script))
+        raise Exception("Missing train script path. Expected training script at {}".format(args.train_script))
 
     # Compute the files in the cross fold (create a CrossFold)
     fold_file = os.path.join(args.temporary_dir, "folds.json")

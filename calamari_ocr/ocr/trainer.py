@@ -246,8 +246,8 @@ class Trainer:
 
                 if iter % checkpoint_params.display == 0:
                     # apply postprocessing to display the true output
-                    pred_sentence = self.txt_postproc.apply("".join(codec.decode(result["decoded"][0])))
-                    gt_sentence = self.txt_postproc.apply("".join(codec.decode(result["gt"][0])))
+                    pred_sentence = "".join(self.txt_postproc.apply(codec.decode(result["decoded"][0])))
+                    gt_sentence = "".join(self.txt_postproc.apply(codec.decode(result["gt"][0])))
 
                     print("#{:08d}: loss={:.8f} ler={:.8f} dt={:.8f}s".format(iter, loss_stats.mean(), ler_stats.mean(), dt_stats.mean()))
                     # Insert utf-8 ltr/rtl direction marks for bidi support

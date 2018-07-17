@@ -40,6 +40,7 @@ def main():
     gt_txts = [split_all_ext(path)[0] + ".gt.txt" for path in sorted(glob_all(args.eval_imgs))]
 
     dataset = FileDataSet(images=gt_images, texts=gt_txts, skip_invalid=not args.no_skip_invalid_gt)
+    dataset.load_samples(processes=1, progress_bar=True)
 
     print("Found {} files in the dataset".format(len(dataset)))
     if len(dataset) == 0:
@@ -63,16 +64,18 @@ def main():
 
     for prediction, sample in do_prediction:
         for sent, p in zip(all_prediction_sentences, prediction):
-            sent.append(p.sentence)
+            sent.append(list(p.sentence))
 
         # vote results
         for voter, voter_sentences in zip(voters, all_voter_sentences):
-            voter_sentences.append(voter.vote_prediction_result(prediction).sentence)
+            voter_sentences.append(list(voter.vote_prediction_result(prediction).sentence))
 
     # evaluation
     text_preproc = text_processor_from_proto(predictor.predictors[0].model_params.text_preprocessor)
-    evaluator = Evaluator(text_preprocessor=text_preproc)
-    evaluator.preload_gt(gt_dataset=dataset, progress_bar=True)
+    text_postproc = text_processor_from_proto(predictor.predictors[0].model_params.text_postprocessor)
+    evaluator = Evaluator(text_postprocessor=text_postproc)
+    evaluator.set_preloaded_gt(text_preproc.apply(dataset.text_samples(), progress_bar=True, processes=args.processes),
+                               progress_bar=True, processes=args.processes)
 
     def single_evaluation(predicted_sentences):
         if len(predicted_sentences) != len(dataset):
@@ -86,7 +89,7 @@ def main():
         return r
 
     full_evaluation = {}
-    for id, data in [(str(i), sent) for i, sent in enumerate(all_prediction_sentences)] + list(zip(args.voter, all_voter_sentences)):
+    for id, data in [(str(i), list(sent)) for i, sent in enumerate(all_prediction_sentences)] + list(zip(args.voter, all_voter_sentences)):
         full_evaluation[id] = {"eval": single_evaluation(data), "data": data}
 
     if args.verbose:

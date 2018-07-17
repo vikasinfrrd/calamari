@@ -14,8 +14,7 @@ class SequenceVoter(Voter):
         texts = [prediction_result.sentence for prediction_result in predictions]
         out = self.process_text(texts)
 
-        # TODO:
-        prediction_out.sentence = "".join([c for c, p in out])
+        prediction_out.sentence[:] = [c for c, p in out]
 
     def process_text(self, texts):
         voters = SequenceVoter.text_to_voters(texts)
@@ -151,10 +150,6 @@ class SequenceVoter(Voter):
         voters.sort(key=lambda v: v.distance)
 
     @staticmethod
-    def clean_text(text):
-        return text.strip()
-
-    @staticmethod
     def text_to_voters(texts):
-        return [SequenceVoter.Voter(SequenceVoter.clean_text(t)) for t in texts]
+        return [SequenceVoter.Voter(t) for t in texts]
 

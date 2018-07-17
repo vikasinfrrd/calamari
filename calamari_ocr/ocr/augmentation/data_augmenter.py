@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from calamari_ocr.utils import parallel_map
 
-import matplotlib.pyplot as plt
-
 class DataAugmenter(ABC):
     def __init__(self):
         super().__init__()

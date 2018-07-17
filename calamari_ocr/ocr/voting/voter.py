@@ -30,18 +30,18 @@ class Voter(ABC):
         # option 2: (Not implemented) Use only the first text postprocessor
         # option 3: Apply all known postprocessors and apply a sequence voting if different results are received
         if self.text_postproc:
-            p.sentence = self.text_postproc.apply(p.sentence)
+            p.sentence = self.text_postproc.apply_single(list(p.sentence))
         else:
-            sentences = [pred.text_postproc.apply(p.sentence) for pred in predictions]
+            sentences = [pred.text_postproc.apply_single(list(p.sentence)) for pred in predictions]
 
             if all([s == sentences[0] for s in sentences[1:]]):
                 # usually all postproc should yield the same results
-                p.sentence = sentences[0]
+                p.sentence[:] = sentences[0]
             else:
                 # we need to vote again
                 from calamari_ocr.ocr.voting import SequenceVoter
                 sv = SequenceVoter()
-                p.sentence = [c for c, _ in sv.process_text(sentences)]
+                p.sentence[:] = [c for c, _ in sv.process_text(sentences)]
 
         return p
 

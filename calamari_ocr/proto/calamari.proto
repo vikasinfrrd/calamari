@@ -168,6 +168,7 @@ message TextProcessorParams {
         BIDI_NORMALIZER = 6;
         TEXT_NORMALIZER = 7;
         TEXT_REGULARIZER = 8;
+        STR_TO_CHAR_LIST = 9;
     }
 
     Type type = 1;
@@ -190,6 +191,8 @@ message TextProcessorParams {
     }
     UnicodeNormalizationType unicode_normalization = 4;
     repeated TextNormalizerReplacementParams replacements = 5;
+
+    repeated string characters = 6;
 }
 
 
@@ -223,7 +226,7 @@ message PredictionPosition {
 
 message Prediction {
     string id = 1;                                  // Use this as hint when saving several predictions into one file
-    string sentence = 2;                            // Postprocessed sentence
+    repeated string sentence = 2;                   // Postprocessed sentence but not flattend, list of str!
     repeated int32 labels = 3;                      // [Optional] The labels (depending on the codec)
     repeated PredictionPosition positions = 4;      // The individual predictions for each position
     DoubleMatrix logits = 5;                        // The full prediction matrix

@@ -131,6 +131,6 @@ class ConfidenceVoter(Voter):
                 sentence += voted_pos[0].char
 
 
-        prediction_out.sentence = sentence
+        prediction_out.sentence[:] = sentence
 
 
