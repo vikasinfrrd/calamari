@@ -9,7 +9,7 @@ from calamari_ocr.utils import parallel_map, split_all_ext
 
 
 class DataSet(ABC):
-    def __init__(self, has_images, has_texts, skip_invalid=False, remove_invalid=True):
+    def __init__(self, has_images, has_texts, skip_invalid=False, remove_invalid=True, has_second_texts=False):
         """ Dataset that stores a list of raw images and corresponding labels.
 
         Parameters
@@ -28,6 +28,7 @@ class DataSet(ABC):
         self.loaded = False
         self.has_images = has_images
         self.has_texts = has_texts
+        self.has_second_texts = has_second_texts
 
         self.skip_invalid = skip_invalid
         self.remove_invalid = remove_invalid
@@ -99,7 +100,7 @@ class DataSet(ABC):
         if not self.loaded:
             raise Exception("Dataset must be loaded to access its training samples")
 
-        data, text = [], []
+        data, text, second_text = [], [], []
 
         for sample in self._samples:
             if "text" not in sample:
@@ -112,8 +113,10 @@ class DataSet(ABC):
 
             data.append(sample["image"])
             text.append(sample["text"])
+            if self.has_second_texts:
+                second_text.append(sample["second_text"])
 
-        return data, text
+        return data, text, second_text
 
     def add_sample(self, sample):
         """ Add a sample
@@ -154,9 +157,10 @@ class DataSet(ABC):
         data = parallel_map(self._load_sample, self._samples, desc="Loading Dataset", processes=processes, progress_bar=progress_bar)
 
         invalid_samples = []
-        for i, ((line, text), sample) in enumerate(zip(data, self._samples)):
+        for i, ((line, text, second_text), sample) in enumerate(zip(data, self._samples)):
             sample["image"] = line
             sample["text"] = text
+            sample["second_text"] = second_text
             if self.has_images:
                 # skip invalid imanges (e. g. corrupted or empty files)
                 if line is None or (line.size == 0 or np.amax(line) == np.amin(line)):
@@ -247,7 +251,7 @@ class RawDataSet(DataSet):
 class FileDataSet(DataSet):
     def __init__(self, images=[], texts=[],
                  skip_invalid=False, remove_invalid=True,
-                 non_existing_as_empty=False):
+                 non_existing_as_empty=False, second_texts=[]):
         """ Create a dataset from a list of files
 
         Images or texts may be empty to create a dataset for prediction or evaluation only.
@@ -267,6 +271,7 @@ class FileDataSet(DataSet):
         """
         super().__init__(has_images=images is None or len(images) > 0,
                          has_texts=texts is None or len(texts) > 0,
+                         has_second_texts=not (second_texts is None or len(second_texts) == 0),
                          skip_invalid=skip_invalid,
                          remove_invalid=remove_invalid)
         self._non_existing_as_empty = non_existing_as_empty
@@ -279,7 +284,10 @@ class FileDataSet(DataSet):
             # No images provided, probably evaluation
             images = [None] * len(texts)
 
-        for image, text in zip(images, texts):
+        if self.has_images and not self.has_second_texts:
+            second_texts = [None] * len(images)
+
+        for image, text, second_text in zip(images, texts, second_texts):
             try:
                 if image is None and text is None:
                     raise Exception("An empty data point is not allowed. Both image and text file are None")
@@ -303,6 +311,13 @@ class FileDataSet(DataSet):
                     raise Exception("Expected image base name equals text base name but got '{}' != '{}'".format(
                         img_bn, text_bn
                     ))
+
+                if second_text:
+                    assert(text)
+                    text_path, text_fn = os.path.split(second_text)
+                    second_text_bn, text_ext = split_all_ext(text_fn)
+                    assert(second_text_bn == text_bn)
+
             except Exception as e:
                 if self.skip_invalid:
                     print("Invalid data: {}".format(e))
@@ -313,12 +328,14 @@ class FileDataSet(DataSet):
             self.add_sample({
                 "image_path": image,
                 "text_path": text,
+                "second_text_path": second_text,
                 "id": img_bn if image else text_bn,
             })
 
     def _load_sample(self, sample):
         return self._load_line(sample["image_path"]),\
-               self._load_gt_txt(sample["text_path"])
+               self._load_gt_txt(sample["text_path"]),\
+                self._load_gt_txt(sample["second_text_path"])
 
     def _load_gt_txt(self, gt_txt_path):
         if gt_txt_path is None:

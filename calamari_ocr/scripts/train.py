@@ -18,6 +18,8 @@ def setup_train_args(parser, omit=[]):
         parser.add_argument("--files", nargs="+",
                             help="List all image files that shall be processed. Ground truth fils with the same "
                                  "base name but with '.gt.txt' as extension are required at the same location")
+        parser.add_argument("--second_files", nargs="+",
+                            help="List all secondary files that shall be processed. Must end with .gt.txt")
 
     parser.add_argument("--seed", type=int, default="0",
                         help="Seed for random operations. If negative or zero a 'random' seed is used")
@@ -79,6 +81,8 @@ def setup_train_args(parser, omit=[]):
     if "validation" not in omit:
         parser.add_argument("--validation", type=str, nargs="+",
                             help="Validation line files used for early stopping")
+        parser.add_argument("--second_validation", type=str, nargs="+",
+                            help="Validation line files used for early stopping")
 
     parser.add_argument("--early_stopping_frequency", type=int, default=-1,
                         help="The frequency of early stopping. If -1, the checkpoint_frequency will be used")
@@ -129,26 +133,47 @@ def run(args):
 
     # Training dataset
     print("Resolving input files")
-    input_image_files = glob_all(args.files)
+    input_image_files = sorted(glob_all(args.files))
     gt_txt_files = [split_all_ext(f)[0] + ".gt.txt" for f in input_image_files]
+    if args.second_files:
+        second_gt_txt_files = sorted(glob_all(args.second_files))
+        assert(len(second_gt_txt_files) == len(gt_txt_files))
+        import os
+        for gt1, gt2 in zip(gt_txt_files, second_gt_txt_files):
+            assert(os.path.basename(gt1) == os.path.basename(gt2))
+
+    else:
+        second_gt_txt_files = []
+
 
     if len(set(gt_txt_files)) != len(gt_txt_files):
         raise Exception("Some image are occurring more than once in the data set.")
 
-    dataset = FileDataSet(input_image_files, gt_txt_files, skip_invalid=not args.no_skip_invalid_gt)
+    dataset = FileDataSet(input_image_files, gt_txt_files, skip_invalid=not args.no_skip_invalid_gt,
+                          second_texts=second_gt_txt_files)
     print("Found {} files in the dataset".format(len(dataset)))
 
     # Validation dataset
     if args.validation:
         print("Resolving validation files")
-        validation_image_files = glob_all(args.validation)
+        validation_image_files = sorted(glob_all(args.validation))
         val_txt_files = [split_all_ext(f)[0] + ".gt.txt" for f in validation_image_files]
+
+        if args.second_validation:
+            sec_val_txt_files = sorted(glob_all(args.second_validation))
+            assert(len(sec_val_txt_files) == len(val_txt_files))
+            import os
+            for gt1, gt2 in zip(sec_val_txt_files, val_txt_files):
+                assert(os.path.basename(gt1) == os.path.basename(gt2))
+        else:
+            sec_val_txt_files = []
 
         if len(set(val_txt_files)) != len(val_txt_files):
             raise Exception("Some validation images are occurring more than once in the data set.")
 
         validation_dataset = FileDataSet(validation_image_files, val_txt_files,
-                                         skip_invalid=not args.no_skip_invalid_gt)
+                                         skip_invalid=not args.no_skip_invalid_gt,
+                                         second_texts=sec_val_txt_files)
         print("Found {} files in the validation dataset".format(len(validation_dataset)))
     else:
         validation_dataset = None

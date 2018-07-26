@@ -13,6 +13,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval_imgs", type=str, nargs="+", required=True,
                         help="The evaluation files")
+    parser.add_argument("--second_eval", type=str, nargs="+", required=True,
+                        help="The evaluation files")
     parser.add_argument("--checkpoint", type=str, nargs="+", default=[],
                         help="Path to the checkpoint without file extension")
     parser.add_argument("-j", "--processes", type=int, default=1,
@@ -38,8 +40,11 @@ def main():
     # load files
     gt_images = sorted(glob_all(args.eval_imgs))
     gt_txts = [split_all_ext(path)[0] + ".gt.txt" for path in sorted(glob_all(args.eval_imgs))]
+    second_gt_txts = sorted(glob_all(args.second_eval))
+    assert(len(gt_txts) == len(second_gt_txts))
 
-    dataset = FileDataSet(images=gt_images, texts=gt_txts, skip_invalid=not args.no_skip_invalid_gt)
+    dataset = FileDataSet(images=gt_images, texts=gt_txts, skip_invalid=not args.no_skip_invalid_gt,
+                          second_texts=second_gt_txts)
 
     print("Found {} files in the dataset".format(len(dataset)))
     if len(dataset) == 0:

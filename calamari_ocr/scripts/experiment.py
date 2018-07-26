@@ -41,6 +41,7 @@ def run_for_single_line(args):
 
     # select number of files
     files = args.train_files
+    second_files = args.train_second_files
     if args.n_lines > 0:
         all_files = glob_all(args.train_files)
         file = random.sample(all_files, args.n_lines)
@@ -51,6 +52,7 @@ def run_for_single_line(args):
     setattr(args, "temporary_dir", tmp_dir)
     setattr(args, "keep_temporary_files", False)
     setattr(args, "files", files)
+    setattr(args, "second_files", second_files)
     setattr(args, "best_model_label", "{id}")
     if not args.skip_train:
         cross_fold_train.main(args)
@@ -81,6 +83,7 @@ def run_for_single_line(args):
                 "--batch_size", str(args.batch_size),
                 "--dump", dump_file,
                 "--eval_imgs"] + args.eval_files + [
+                "--second_eval"] + args.eval_second_files + [
                 ] + (["--verbose"] if args.verbose else []) + [
                 "--checkpoint"] + models + [
                 ], args.run, {"threads": args.num_threads}), verbose=args.verbose):
@@ -101,7 +104,11 @@ def main():
                         help="The base directory where to store all working files")
     parser.add_argument("--eval_files", type=str, nargs="+", required=True,
                         help="All files that shall be used for evaluation")
+    parser.add_argument("--eval_second_files", type=str, nargs="+", required=True,
+                        help="All files that shall be used for evaluation")
     parser.add_argument("--train_files", type=str, nargs="+", required=True,
+                        help="All files that shall be used for (cross-fold) training")
+    parser.add_argument("--train_second_files", type=str, nargs="+", required=True,
                         help="All files that shall be used for (cross-fold) training")
     parser.add_argument("--n_lines", type=int, default=[-1], nargs="+",
                         help="Optional argument to specify the number of lines (images) used for training. "

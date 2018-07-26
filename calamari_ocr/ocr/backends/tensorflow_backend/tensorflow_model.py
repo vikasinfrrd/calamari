@@ -28,23 +28,26 @@ class TensorflowModel(ModelInterface):
 
             # inputs either as placeholders or as data set (faster)
             if self.implementation_handles_batching:
-                self.inputs, self.input_seq_len, self.targets, self.dropout_rate, self.data_iterator = \
+                self.inputs, self.input_seq_len, self.targets, self.second_targets, self.dropout_rate, self.data_iterator = \
                     self.create_dataset_inputs(batch_size, network_proto.features)
             else:
                 self.data_iterator = None
-                self.inputs, self.input_seq_len, self.targets, self.dropout_rate = self.create_placeholders()
+                self.inputs, self.input_seq_len, self.targets, self.second_targets, self.dropout_rate = self.create_placeholders()
 
             # create network and solver (if train)
             if graph_type == "train":
-                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded = \
+                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded, \
+                self.time_major_logits2, self.time_major_softmax2, self.logits2, self.softmax2, self.decoded2, self.sparse_decoded2 = \
                     self.create_network(self.inputs, self.input_seq_len, self.dropout_rate, reuse_variables=reuse_weights)
-                self.train_op, self.loss, self.cer = self.create_solver(self.targets, self.time_major_logits, self.logits, self.output_seq_len, self.decoded)
+                self.train_op, self.loss, self.cer, self.cer2 = self.create_solver(self.targets, self.time_major_logits, self.logits, self.output_seq_len, self.decoded)
             elif graph_type == "test":
-                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded = \
+                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded, \
+                    self.time_major_logits2, self.time_major_softmax2, self.logits2, self.softmax2, self.decoded2, self.sparse_decoded2 = \
                     self.create_network(self.inputs, self.input_seq_len, self.dropout_rate, reuse_variables=reuse_weights)
                 self.cer = self.create_cer(self.decoded, self.targets)
             else:
-                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded = \
+                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded, \
+                    self.time_major_logits2, self.time_major_softmax2, self.logits2, self.softmax2, self.decoded2, self.sparse_decoded2 = \
                     self.create_network(self.inputs, self.input_seq_len, self.dropout_rate, reuse_variables=reuse_weights)
 
     def is_gpu_available(self):
@@ -212,46 +215,85 @@ class TensorflowModel(ModelInterface):
                 tf.identity(decoded.dense_shape, name="decoded_shape"),
             )
 
-            return lstm_seq_len, time_major_logits, time_major_softmax, logits, softmax, decoded, sparse_decoded
+            w2 = tf.get_variable('W2', validate_shape=False, initializer=tf.random_uniform([output_size, 8], -0.1, 0.1))
+            b2 = tf.get_variable('B2', validate_shape=False, initializer=tf.constant(0., shape=[8]))
+
+            # the output layer
+            time_major_logits2 = tf.matmul(time_major_outputs, w2) + b2
+
+            # reshape back
+            time_major_logits2 = tf.reshape(time_major_logits2, [-1, batch_size, tf.shape(w2)[-1]],
+                                           name="time_major_logits2")
+
+            time_major_softmax2 = tf.nn.softmax(time_major_logits2, -1, "time_major_softmax2")
+
+            logits2 = tf.transpose(time_major_logits2, [1, 0, 2], name="logits2")
+            softmax2 = tf.transpose(time_major_softmax2, [1, 0, 2], name="softmax2")
+
+            # DECODER
+            # ================================================================
+            if network_proto.ctc == NetworkParams.CTC_DEFAULT:
+                decoded2, log_prob2 = ctc_ops.ctc_greedy_decoder(time_major_logits2, lstm_seq_len, merge_repeated=network_proto.ctc_merge_repeated)
+            elif network_proto.ctc == NetworkParams.CTC_FUZZY:
+                decoded2, log_prob2 = self.fuzzy_module['decoder_op'](softmax2, lstm_seq_len)
+            else:
+                raise Exception("Unknown ctc model: '%s'. Supported are Default and Fuzzy" % network_proto.ctc)
+
+            decoded2 = decoded2[0]
+            sparse_decoded2 = (
+                tf.identity(decoded2.indices, name="decoded_indices"),
+                tf.identity(decoded2.values, name="decoded_values"),
+                tf.identity(decoded2.dense_shape, name="decoded_shape"),
+            )
+            return lstm_seq_len, time_major_logits, time_major_softmax, logits, softmax, decoded, sparse_decoded, \
+                time_major_logits2, time_major_softmax2, logits2, softmax2, decoded2, sparse_decoded2
 
     def create_placeholders(self):
         with tf.variable_scope("", reuse=False) as scope:
             inputs = tf.placeholder(tf.float32, shape=(None, None, self.network_proto.features), name="inputs")
             seq_len = tf.placeholder(tf.int32, shape=(None,), name="seq_len")
             targets = tf.sparse_placeholder(tf.int32, shape=(None, None), name="targets")
+            second_targets = tf.sparse_placeholder(tf.int32, shape=(None, None), name="second_targets")
             dropout_rate = tf.placeholder(tf.float32, shape=(), name="dropout_rate")
 
-        return inputs, seq_len, targets, dropout_rate
+        return inputs, seq_len, targets, second_targets, dropout_rate
 
     def create_dataset_inputs(self, batch_size, line_height, buffer_size=1000):
         with tf.variable_scope("", reuse=False):
             def gen():
-                for i, l in zip(self.raw_images, self.raw_labels):
+                for i, l, l2 in zip(self.raw_images, self.raw_labels, self.raw_second_labels):
                     if self.graph_type == "train" and len(l) == 0:
                         continue
 
-                    yield i, l, [len(i)], [len(l)]
+                    yield i, l, l2, [len(i)], [len(l)], [len(l2)]
 
-            def convert_to_sparse(data, labels, len_data, len_labels):
+            def convert_to_sparse(data, labels, labels2, len_data, len_labels, len_labels2):
                 indices = tf.where(tf.not_equal(labels, -1))
                 values = tf.gather_nd(labels, indices) - 1
                 shape = tf.shape(labels, out_type=tf.int64)
-                return data / 255, tf.SparseTensor(indices, values, shape), len_data, len_labels
 
-            dataset = tf.data.Dataset.from_generator(gen, (tf.float32, tf.int32, tf.int32, tf.int32))
+                indices2 = tf.where(tf.not_equal(labels2, -1))
+                values2 = tf.gather_nd(labels2, indices2) - 1
+                shape2 = tf.shape(labels2, out_type=tf.int64)
+
+                return data / 255, tf.SparseTensor(indices, values, shape), \
+                        tf.SparseTensor(indices2, values2, shape2), \
+                       len_data, len_labels, len_labels2
+
+            dataset = tf.data.Dataset.from_generator(gen, (tf.float32, tf.int32, tf.int32, tf.int32, tf.int32, tf.int32))
             if self.graph_type == "train":
                 dataset = dataset.repeat().shuffle(buffer_size, seed=self.network_proto.backend.random_seed)
             else:
                 pass
 
-            dataset = dataset.padded_batch(batch_size, ([None, line_height], [None], [1], [1]),
-                                           padding_values=(np.float32(0), np.int32(-1), np.int32(0), np.int32(0)))
+            dataset = dataset.padded_batch(batch_size, ([None, line_height], [None], [None], [1], [1], [1]),
+                                           padding_values=(np.float32(0), np.int32(-1), np.int32(-1), np.int32(0), np.int32(0), np.int32(0)))
             dataset = dataset.map(convert_to_sparse)
 
             data_initializer = dataset.prefetch(5).make_initializable_iterator()
             inputs = data_initializer.get_next()
             dropout_rate = tf.placeholder(tf.float32, shape=(), name="dropout_rate")
-            return inputs[0], tf.reshape(inputs[2], [-1]), inputs[1], dropout_rate, data_initializer
+            return inputs[0], tf.reshape(inputs[3], [-1]), inputs[1], inputs[2], dropout_rate, data_initializer
 
     def create_cer(self, decoded, targets):
         # character error rate
@@ -261,6 +303,7 @@ class TensorflowModel(ModelInterface):
     def create_solver(self, targets, time_major_logits, batch_major_logits, seq_len, decoded):
         # ctc predictions
         cer = self.create_cer(decoded, targets)
+        cer2 = self.create_cer(self.decoded2, self.second_targets)
 
         # Note for codec change: the codec size is derived upon creation, therefore the ctc ops must be created
         # using the true codec size (the W/B-Matrix may change its shape however during loading/codec change
@@ -272,6 +315,13 @@ class TensorflowModel(ModelInterface):
                                     time_major=True,
                                     ctc_merge_repeated=self.network_proto.ctc_merge_repeated,
                                     ignore_longer_outputs_than_inputs=True)
+            loss2 = ctc_ops.ctc_loss(self.second_targets,
+                                    self.time_major_logits2,
+                                    self.output_seq_len,
+                                    time_major=True,
+                                    ctc_merge_repeated=self.network_proto.ctc_merge_repeated,
+                                    ignore_longer_outputs_than_inputs=True)
+            loss = loss + loss2
         elif self.network_proto.ctc == NetworkParams.CTC_FUZZY:
             loss, deltas = self.fuzzy_module['module'].fuzzy_ctc_loss(
                 batch_major_logits, targets.indices,
@@ -322,7 +372,7 @@ class TensorflowModel(ModelInterface):
         training_ops.append(optimizer.apply_gradients(gvs, name='grad_update_op'))
         train_op = tf.group(training_ops, name="train_op")
 
-        return train_op, cost, cer
+        return train_op, cost, cer, cer2
 
     def uninitialized_variables(self):
         with self.graph.as_default():
@@ -417,7 +467,7 @@ class TensorflowModel(ModelInterface):
 
     def train_dataset(self):
         out = self.session.run(
-            [self.loss, self.softmax, self.output_seq_len, self.cer, self.decoded, self.targets],
+            [self.loss, self.softmax, self.output_seq_len, self.cer, self.decoded, self.targets, self.cer2, self.decoded2, self.second_targets],
             feed_dict={
                 self.dropout_rate: self.network_proto.dropout,
             }
@@ -460,8 +510,9 @@ class TensorflowModel(ModelInterface):
             cost, probs, seq_len, ler, decoded = self.train_batch(x, len_x, y)
             gt = batch_y
         else:
-            cost, probs, seq_len, ler, decoded, gt = self.train_dataset()
+            cost, probs, seq_len, ler, decoded, gt, ler2, decoded2, gt2 = self.train_dataset()
             gt = TensorflowModel.__sparse_to_lists(gt)
+            gt2 = TensorflowModel.__sparse_to_lists(gt2)
 
         probs = np.roll(probs, 1, axis=2)
         return {
@@ -471,6 +522,9 @@ class TensorflowModel(ModelInterface):
             "decoded": TensorflowModel.__sparse_to_lists(decoded),
             "gt": gt,
             "logits_lengths": seq_len,
+            "ler2": ler2,
+            "gt2": gt2,
+            "decoded2": TensorflowModel.__sparse_to_lists(decoded2),
         }
 
     def predict(self):

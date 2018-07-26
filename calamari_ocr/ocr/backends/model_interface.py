@@ -37,7 +37,7 @@ class ModelInterface(ABC):
             NetworkParams.CTC_DEFAULT: DefaultCTCDecoder(),
         }[network_proto.ctc]
 
-    def set_data(self, images, labels=None):
+    def set_data(self, images, labels=None, second_labels=None):
         """ Set the networks data (images, and labels)
 
         Set the data to be processed by the network on train or predict.
@@ -56,6 +56,7 @@ class ModelInterface(ABC):
         """
         self.raw_images = images
         self.raw_labels = labels if labels and len(labels) > 0 else [[] for _ in range(len(images))]
+        self.raw_second_labels = second_labels if second_labels and len(second_labels) > 0 else [[] for _ in range(len(images))]
         self.indices = list(range(len(images)))
 
         self.reset_data()

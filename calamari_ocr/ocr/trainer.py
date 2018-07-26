@@ -77,6 +77,7 @@ class Trainer:
         self.data_preproc = data_preproc if data_preproc else data_processor_from_proto(checkpoint_params.model.data_preprocessor)
         self.weights = checkpoint_path(weights) if weights else None
         self.codec = codec
+        self.second_codec = None
         self.codec_whitelist = codec_whitelist
 
     def train(self, progress_bar=False):
@@ -93,26 +94,30 @@ class Trainer:
         train_start_time = time.time() + self.checkpoint_params.total_time
 
         self.dataset.load_samples(processes=1, progress_bar=progress_bar)
-        datas, txts = self.dataset.train_samples(skip_empty=checkpoint_params.skip_invalid_gt)
+        datas, txts, second_txts = self.dataset.train_samples(skip_empty=checkpoint_params.skip_invalid_gt)
         if len(datas) == 0:
             raise Exception("Empty dataset is not allowed. Check if the data is at the correct location")
 
         if self.validation_dataset:
             self.validation_dataset.load_samples(processes=1, progress_bar=progress_bar)
-            validation_datas, validation_txts = self.validation_dataset.train_samples(skip_empty=checkpoint_params.skip_invalid_gt)
+            validation_datas, validation_txts, second_validation_txts = self.validation_dataset.train_samples(skip_empty=checkpoint_params.skip_invalid_gt)
             if len(validation_datas) == 0:
                 raise Exception("Validation dataset is empty. Provide valid validation data for early stopping.")
         else:
-            validation_datas, validation_txts = [], []
+            validation_datas, validation_txts, second_validation_txts = [], [], []
 
         # preprocessing steps
         texts = self.txt_preproc.apply(txts, processes=checkpoint_params.processes, progress_bar=progress_bar)
+        second_texts = self.txt_preproc.apply(second_txts, processes=checkpoint_params.processes, progress_bar=progress_bar)
         datas = self.data_preproc.apply(datas, processes=checkpoint_params.processes, progress_bar=progress_bar)
         validation_txts = self.txt_preproc.apply(validation_txts, processes=checkpoint_params.processes, progress_bar=progress_bar)
+        second_validation_txts = self.txt_preproc.apply(second_validation_txts, processes=checkpoint_params.processes, progress_bar=progress_bar)
         validation_datas = self.data_preproc.apply(validation_datas, processes=checkpoint_params.processes, progress_bar=progress_bar)
+
 
         # compute the codec
         codec = self.codec if self.codec else Codec.from_texts(texts, whitelist=self.codec_whitelist)
+        second_codec = self.second_codec if self.second_codec else Codec.from_texts(second_texts)
 
         # data augmentation on preprocessed data
         if self.data_augmenter:
@@ -152,17 +157,19 @@ class Trainer:
         # store the new codec
         checkpoint_params.model.codec.charset[:] = codec.charset
         print("CODEC: {}".format(codec.charset))
+        print("SECOND CODEC: {}".format(second_codec.charset))
 
         # compute the labels with (new/current) codec
         labels = [codec.encode(txt) for txt in texts]
+        second_labels = [second_codec.encode(txt) for txt in second_texts]
 
         backend = create_backend_from_proto(network_params,
                                             weights=self.weights,
                                             )
         train_net = backend.create_net(restore=None, weights=self.weights, graph_type="train", batch_size=checkpoint_params.batch_size)
         test_net = backend.create_net(restore=None, weights=self.weights, graph_type="test", batch_size=checkpoint_params.batch_size)
-        train_net.set_data(datas, labels)
-        test_net.set_data(validation_datas, validation_txts)
+        train_net.set_data(datas, labels, second_labels)
+        test_net.set_data(validation_datas, validation_txts, second_validation_txts)
         if codec_changes:
             # only required on one net, since the other shares the same variables
             train_net.realign_model_labels(*codec_changes)
@@ -172,6 +179,7 @@ class Trainer:
 
         loss_stats = RunningStatistics(checkpoint_params.stats_size, checkpoint_params.loss_stats)
         ler_stats = RunningStatistics(checkpoint_params.stats_size, checkpoint_params.ler_stats)
+        ler2_stats = RunningStatistics(checkpoint_params.stats_size, checkpoint_params.ler_stats)
         dt_stats = RunningStatistics(checkpoint_params.stats_size, checkpoint_params.dt_stats)
 
         early_stopping_enabled = self.validation_dataset is not None \
@@ -241,6 +249,7 @@ class Trainer:
 
                 loss_stats.push(result['loss'])
                 ler_stats.push(result['ler'])
+                ler2_stats.push(result['ler2'])
 
                 dt_stats.push(time.time() - iter_start_time)
 
@@ -249,11 +258,16 @@ class Trainer:
                     pred_sentence = self.txt_postproc.apply("".join(codec.decode(result["decoded"][0])))
                     gt_sentence = self.txt_postproc.apply("".join(codec.decode(result["gt"][0])))
 
-                    print("#{:08d}: loss={:.8f} ler={:.8f} dt={:.8f}s".format(iter, loss_stats.mean(), ler_stats.mean(), dt_stats.mean()))
+                    print("#{:08d}: loss={:.8f} ler={:.8f} ler2={:.8f} dt={:.8f}s".format(iter, loss_stats.mean(), ler_stats.mean(), ler2_stats.mean(), dt_stats.mean()))
                     # Insert utf-8 ltr/rtl direction marks for bidi support
                     lr = "\u202A\u202B"
                     print(" PRED: '{}{}{}'".format(lr[bidi.get_base_level(pred_sentence)], pred_sentence, "\u202C"))
                     print(" TRUE: '{}{}{}'".format(lr[bidi.get_base_level(gt_sentence)], gt_sentence, "\u202C"))
+
+                    pred_sentence = self.txt_postproc.apply("".join(second_codec.decode(result["decoded2"][0])))
+                    gt_sentence = self.txt_postproc.apply("".join(second_codec.decode(result["gt2"][0])))
+                    print(" PRE2: '{}{}{}'".format(lr[bidi.get_base_level(pred_sentence)], pred_sentence, "\u202C"))
+                    print(" TRU2: '{}{}{}'".format(lr[bidi.get_base_level(gt_sentence)], gt_sentence, "\u202C"))
 
                 if (iter + 1) % checkpoint_params.checkpoint_frequency == 0:
                     last_checkpoint = make_checkpoint(checkpoint_params.output_dir, checkpoint_params.output_model_prefix)

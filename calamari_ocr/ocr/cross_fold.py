@@ -5,7 +5,7 @@ from calamari_ocr.utils import glob_all
 
 
 class CrossFold:
-    def __init__(self, n_folds, source_files, output_dir):
+    def __init__(self, n_folds, source_files, output_dir, second_source_files=None):
         """ Prepare cross fold training
 
         This class creates folds out of the given source files.
@@ -24,7 +24,11 @@ class CrossFold:
         """
         self.n_folds = n_folds
         self.inputs = sorted(glob_all(source_files))
+        self.second_inputs = sorted(glob_all(second_source_files))
         self.output_dir = os.path.abspath(output_dir)
+
+        if self.second_inputs:
+            assert(len(self.second_inputs) == len(self.inputs))
 
         if len(self.inputs) == 0:
             raise Exception("No files found at '{}'".format(source_files))
@@ -34,8 +38,15 @@ class CrossFold:
 
         # fill single fold files
         self.folds = [[] for _ in range(self.n_folds)]
+        if self.second_inputs:
+            self.second_folds = [[] for _ in range(self.n_folds)]
+        else:
+            self.second_folds = None
+
         for i, input in enumerate(self.inputs):
             self.folds[i % n_folds].append(input)
+            if self.second_inputs:
+                self.second_folds[i % n_folds].append(self.second_inputs[i])
 
     def train_files(self, fold):
         """ List the train files of the `fold`
@@ -55,6 +66,14 @@ class CrossFold:
         """
         all_files = []
         for fold_id, inputs in enumerate(self.folds):
+            if fold_id != fold:
+                all_files += inputs
+
+        return all_files
+
+    def train_second_files(self, fold):
+        all_files = []
+        for fold_id, inputs in enumerate(self.second_folds):
             if fold_id != fold:
                 all_files += inputs
 
@@ -82,6 +101,13 @@ class CrossFold:
 
         return []
 
+    def test_second_files(self, fold):
+        for fold_id, inputs in enumerate(self.second_folds):
+            if fold_id == fold:
+                return inputs
+
+        return []
+
     def write_folds_to_json(self, filepath):
         """ Write the fold split to the `filepath` as json.
 
@@ -101,6 +127,6 @@ class CrossFold:
 
         """
         with open(filepath, 'w') as f:
-            json.dump({"folds": self.folds}, f, indent=4)
+            json.dump({"folds": self.folds, "second_folds": self.second_folds}, f, indent=4)
 
 

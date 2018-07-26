@@ -42,6 +42,9 @@ def main(args=None):
         parser.add_argument("--files", nargs="+",
                             help="List all image files that shall be processed. Ground truth fils with the same "
                                  "base name but with '.gt.txt' as extension are required at the same location")
+        parser.add_argument("--second_files", nargs="+",
+                            help="List all image files that shall be processed. Ground truth fils with the same "
+                                 "base name but with '.gt.txt' as extension are required at the same location")
         parser.add_argument("--n_folds", type=int, default=5,
                             help="The number of fold, that is the number of models to train")
         parser.add_argument("--keep_temporary_files", action="store_true",
@@ -117,7 +120,7 @@ def main(args=None):
 
     # Compute the files in the cross fold (create a CrossFold)
     fold_file = os.path.join(args.temporary_dir, "folds.json")
-    cross_fold = CrossFold(n_folds=args.n_folds, source_files=args.files, output_dir=args.best_models_dir)
+    cross_fold = CrossFold(n_folds=args.n_folds, source_files=args.files, second_source_files=args.second_files, output_dir=args.best_models_dir)
     cross_fold.write_folds_to_json(fold_file)
 
     # Create the json argument file for each individual training
@@ -126,12 +129,16 @@ def main(args=None):
     for fold in folds_to_run:
         train_files = cross_fold.train_files(fold)
         test_files = cross_fold.test_files(fold)
+        second_train_files = cross_fold.train_second_files(fold)
+        second_test_files = cross_fold.test_second_files(fold)
         path = os.path.join(args.temporary_dir, "fold_{}.json".format(fold))
         with open(path, 'w') as f:
             fold_args = vars(args).copy()
             fold_args["id"] = fold
             fold_args["files"] = train_files
+            fold_args["second_files"] = second_train_files
             fold_args["validation"] = test_files
+            fold_args["second_validation"] = second_test_files
             fold_args["train_script"] = train_script_path
             fold_args["verbose"] = True
             fold_args["output_dir"] = os.path.join(args.temporary_dir, "fold_{}".format(fold))
