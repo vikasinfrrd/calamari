@@ -45,7 +45,7 @@ def main():
 
     dataset = FileDataSet(images=gt_images, texts=gt_txts, skip_invalid=not args.no_skip_invalid_gt,
                           second_texts=second_gt_txts)
-    dataset2 = FileDataSet(images=None, texts=second_gt_txts, skip_invalid=not args.no_skip_invalid_gt)
+    dataset2 = FileDataSet(images=gt_images, texts=second_gt_txts, skip_invalid=not args.no_skip_invalid_gt)
 
     print("Found {} files in the dataset".format(len(dataset)))
     if len(dataset) == 0:
