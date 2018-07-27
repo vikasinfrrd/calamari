@@ -74,19 +74,14 @@ def main():
         voters2.append(voter_from_proto(voter_params))
         all_voter_sentences2.append([])
 
-    for (prediction, prediction2), sample in do_prediction:
-        for sent, p in zip(all_prediction_sentences, prediction):
+    for prediction, sample in do_prediction:
+        for sent, sent2, (p, p2) in zip(all_prediction_sentences, all_prediction_sentences2, prediction):
             sent.append(p.sentence)
-
-        for sent, p in zip(all_prediction_sentences2, prediction2):
-            sent.append(p.sentence)
+            sent2.append(p2.sentence)
 
         # vote results
         for voter, voter_sentences in zip(voters, all_voter_sentences):
             voter_sentences.append(voter.vote_prediction_result(prediction).sentence)
-
-        for voter, voter_sentences in zip(voters2, all_voter_sentences2):
-            voter_sentences.append(voter.vote_prediction_result(prediction2).sentence)
 
     # evaluation
     text_preproc = text_processor_from_proto(predictor.predictors[0].model_params.text_preprocessor)
