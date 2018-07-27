@@ -112,7 +112,8 @@ def main():
     evaluator = Evaluator(text_preprocessor=text_preproc)
     evaluator.preload_gt(gt_dataset=dataset2, progress_bar=True)
     for id, data in [(str(i), sent) for i, sent in enumerate(all_prediction_sentences2)] + list(zip(args.voter, all_voter_sentences2)):
-        full_evaluation[id] = {"eval2": single_evaluation(data), "data2": data, }
+        full_evaluation[id]["eval2"] = single_evaluation(data)
+        full_evaluation[id]["data2"] = data
 
     if args.verbose:
         print(full_evaluation)

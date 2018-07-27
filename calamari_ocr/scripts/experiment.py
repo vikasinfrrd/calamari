@@ -195,6 +195,25 @@ def main():
 
         print(data)
 
+    print("\nEVAL 2")
+    print(header)
+    for prediction_map, n_lines in zip(predictions, args.n_lines):
+        prediction = prediction_map["full"]
+        data = "{}".format(n_lines)
+        folds_lers = []
+        for fold in range(len(actual_folds)):
+            eval = prediction[str(fold)]["eval2"]
+            data += ",{}".format(eval['avg_ler'])
+            folds_lers.append(eval['avg_ler'])
+
+        data += ",{},{}".format(np.mean(folds_lers), np.std(folds_lers))
+        for voter in ['sequence_voter', 'confidence_voter_default_ctc', 'confidence_voter_fuzzy_ctc']:
+            eval = prediction[voter]["eval2"]
+            data += ",{}".format(eval['avg_ler'])
+
+        print(data)
+
+
     if args.n_confusions != 0:
         for prediction_map, n_lines in zip(predictions, args.n_lines):
             prediction = prediction_map["full"]
@@ -206,10 +225,14 @@ def main():
             for fold in range(len(actual_folds)):
                 print("FOLD {}".format(fold))
                 print_confusions(prediction[str(fold)]['eval'], args.n_confusions)
+                print("FOLD EVAL 2 {}".format(fold))
+                print_confusions(prediction[str(fold)]['eval2'], args.n_confusions)
 
             for voter in ['sequence_voter', 'confidence_voter_default_ctc', 'confidence_voter_fuzzy_ctc']:
                 print("VOTER {}".format(voter))
                 print_confusions(prediction[voter]['eval'], args.n_confusions)
+                print("VOTER EVAL 2{}".format(voter))
+                print_confusions(prediction[voter]['eval2'], args.n_confusions)
 
     if args.xlsx_output:
         data_list = []
