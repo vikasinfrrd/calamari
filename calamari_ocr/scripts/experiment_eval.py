@@ -79,9 +79,15 @@ def main():
             sent.append(p.sentence)
             sent2.append(p2.sentence)
 
+        preds1 = [p[0] for p in prediction]
+        preds2 = [p[1] for p in prediction]
+
         # vote results
         for voter, voter_sentences in zip(voters, all_voter_sentences):
-            voter_sentences.append(voter.vote_prediction_result(prediction).sentence)
+            voter_sentences.append(voter.vote_prediction_result(preds1).sentence)
+
+        for voter, voter_sentences in zip(voters2, all_voter_sentences2):
+            voter_sentences.append(voter.vote_prediction_result(preds2).sentence)
 
     # evaluation
     text_preproc = text_processor_from_proto(predictor.predictors[0].model_params.text_preprocessor)
