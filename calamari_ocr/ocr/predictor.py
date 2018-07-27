@@ -42,7 +42,7 @@ class PredictionResult:
 
 
 class Predictor:
-    def __init__(self, checkpoint=None, text_postproc=None, data_preproc=None, codec=None, network=None, batch_size=1, processes=1):
+    def __init__(self, checkpoint=None, text_postproc=None, data_preproc=None, codec=None, codec2=None, network=None, batch_size=1, processes=1):
         """ Predicting a dataset based on a trained model
 
         Parameters
@@ -93,6 +93,7 @@ class Predictor:
             raise Exception("Either a checkpoint or a existing backend must be provided")
 
         self.codec = codec if codec else Codec(self.model_params.codec.charset)
+        self.codec2 = codec2 if codec2 else Codec(self.model_params.codec2.charset)
 
     def predict_dataset(self, dataset, progress_bar=True):
         """ Predict a complete dataset
@@ -146,8 +147,9 @@ class Predictor:
         else:
             out = self.network.prediction_step()
 
-        for p in out:
-            yield PredictionResult(p, codec=self.codec, text_postproc=self.text_postproc)
+        for p, p2 in out:
+            yield PredictionResult(p, codec=self.codec, text_postproc=self.text_postproc), \
+                PredictionResult(p2, codec=self.codec2, text_postproc=self.text_postproc)
 
 
 class MultiPredictor:

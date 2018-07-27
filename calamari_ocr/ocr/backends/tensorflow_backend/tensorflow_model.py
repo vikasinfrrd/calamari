@@ -488,7 +488,7 @@ class TensorflowModel(ModelInterface):
 
     def predict_raw(self, x, len_x):
         return self.session.run(
-            [self.softmax, self.output_seq_len, self.decoded],
+            [self.softmax, self.output_seq_len, self.decoded, self.softmax2, self.decoded2],
             feed_dict={
                 self.inputs: x,
                 self.input_seq_len: len_x,
@@ -497,7 +497,7 @@ class TensorflowModel(ModelInterface):
 
     def predict_dataset(self):
         return self.session.run(
-            [self.softmax, self.output_seq_len, self.decoded],
+            [self.softmax, self.output_seq_len, self.decoded, self.softmax2, self.decoded2],
             feed_dict={
                 self.dropout_rate: 0,
             })
@@ -530,11 +530,12 @@ class TensorflowModel(ModelInterface):
     def predict(self):
         try:
             while True:
-                probs, seq_len, decoded = self.predict_dataset()
+                probs, seq_len, decoded, probs2, decoded2 = self.predict_dataset()
                 probs = np.roll(probs, 1, axis=2)
+                probs2 = np.roll(probs2, 1, axis=2)
                 # decoded = TensorflowBackend.__sparse_to_lists(decoded)
-                for l, s in zip(probs, seq_len):
-                    yield self.ctc_decoder.decode(l[:s])
+                for l, l2, s in zip(probs, probs2, seq_len):
+                    yield self.ctc_decoder.decode(l[:s]), self.ctc_decoder.decode(l2[:s])
 
         except tf.errors.OutOfRangeError as e:
             # no more data available

@@ -132,6 +132,7 @@ class Trainer:
         network_params = checkpoint_params.model.network
         network_params.features = checkpoint_params.model.line_height
         network_params.classes = len(codec)
+        network_params.classes2 = len(second_codec)
         if self.weights:
             # if we load the weights, take care of codec changes as-well
             with open(self.weights + '.json', 'r') as f:
@@ -156,6 +157,7 @@ class Trainer:
 
         # store the new codec
         checkpoint_params.model.codec.charset[:] = codec.charset
+        checkpoint_params.model.codec2.charset[:] = second_codec.charset
         print("CODEC: {}".format(codec.charset))
         print("SECOND CODEC: {}".format(second_codec.charset))
 

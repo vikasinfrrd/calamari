@@ -95,6 +95,7 @@ message NetworkParams {
 
     int32 features = 6;
     int32 classes = 7;
+    int32 classes2 = 14;
 
     bool ctc_merge_repeated = 9;
     CTCType ctc = 10;
@@ -129,6 +130,7 @@ message ModelParams {
     TextProcessorParams text_preprocessor = 5;
     TextProcessorParams text_postprocessor = 6;
     CodecParams codec = 7;
+    CodecParams codec2 = 8;
 }
 
 message DataPreprocessorParams {

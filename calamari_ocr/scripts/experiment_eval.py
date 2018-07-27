@@ -45,6 +45,7 @@ def main():
 
     dataset = FileDataSet(images=gt_images, texts=gt_txts, skip_invalid=not args.no_skip_invalid_gt,
                           second_texts=second_gt_txts)
+    dataset2 = FileDataSet(images=None, texts=second_gt_txts, skip_invalid=not args.no_skip_invalid_gt)
 
     print("Found {} files in the dataset".format(len(dataset)))
     if len(dataset) == 0:
@@ -59,6 +60,10 @@ def main():
     all_voter_sentences = []
     all_prediction_sentences = [[] for _ in range(n_models)]
 
+    voters2 = []
+    all_voter_sentences2 = []
+    all_prediction_sentences2 = [[] for _ in range(n_models)]
+
     for voter in args.voter:
         # create voter
         voter_params = VoterParams()
@@ -66,13 +71,22 @@ def main():
         voters.append(voter_from_proto(voter_params))
         all_voter_sentences.append([])
 
-    for prediction, sample in do_prediction:
+        voters2.append(voter_from_proto(voter_params))
+        all_voter_sentences2.append([])
+
+    for (prediction, prediction2), sample in do_prediction:
         for sent, p in zip(all_prediction_sentences, prediction):
+            sent.append(p.sentence)
+
+        for sent, p in zip(all_prediction_sentences2, prediction2):
             sent.append(p.sentence)
 
         # vote results
         for voter, voter_sentences in zip(voters, all_voter_sentences):
             voter_sentences.append(voter.vote_prediction_result(prediction).sentence)
+
+        for voter, voter_sentences in zip(voters2, all_voter_sentences2):
+            voter_sentences.append(voter.vote_prediction_result(prediction2).sentence)
 
     # evaluation
     text_preproc = text_processor_from_proto(predictor.predictors[0].model_params.text_preprocessor)
@@ -92,7 +106,12 @@ def main():
 
     full_evaluation = {}
     for id, data in [(str(i), sent) for i, sent in enumerate(all_prediction_sentences)] + list(zip(args.voter, all_voter_sentences)):
-        full_evaluation[id] = {"eval": single_evaluation(data), "data": data}
+        full_evaluation[id] = {"eval": single_evaluation(data), "data": data, }
+
+    evaluator = Evaluator(text_preprocessor=text_preproc)
+    evaluator.preload_gt(gt_dataset=dataset2, progress_bar=True)
+    for id, data in [(str(i), sent) for i, sent in enumerate(all_prediction_sentences2)] + list(zip(args.voter, all_voter_sentences2)):
+        full_evaluation[id] = {"eval2": single_evaluation(data), "data2": data, }
 
     if args.verbose:
         print(full_evaluation)
