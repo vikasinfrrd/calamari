@@ -192,7 +192,7 @@ class Trainer:
         early_stopping_best_at_iter = checkpoint_params.early_stopping_best_at_iter
 
         early_stopping_predictor = Predictor(codec=codec, text_postproc=self.txt_postproc,
-                                             network=test_net)
+                                             network=test_net, codec2=second_codec)
 
         # Start the actual training
         # ====================================================================================

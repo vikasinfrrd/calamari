@@ -43,8 +43,11 @@ def run_for_single_line(args):
     files = args.train_files
     second_files = args.train_second_files
     if args.n_lines > 0:
-        all_files = glob_all(args.train_files)
-        file = random.sample(all_files, args.n_lines)
+        all_files = sorted(glob_all(args.train_files))
+        second_all_files = sorted(glob_all(args.train_second_files))
+        file_indices = random.sample(range(len(all_files)), args.n_lines)
+        files = [all_files[i] for i in file_indices]
+        second_files = [second_all_files[i] for i in file_indices]
 
     # run the cross-fold-training
     setattr(args, "max_parallel_models", args.max_parallel_models)
@@ -212,7 +215,6 @@ def main():
             data += ",{}".format(eval['avg_ler'])
 
         print(data)
-
 
     if args.n_confusions != 0:
         for prediction_map, n_lines in zip(predictions, args.n_lines):

@@ -215,8 +215,8 @@ class TensorflowModel(ModelInterface):
                 tf.identity(decoded.dense_shape, name="decoded_shape"),
             )
 
-            w2 = tf.get_variable('W2', validate_shape=False, initializer=tf.random_uniform([output_size, 8], -0.1, 0.1))
-            b2 = tf.get_variable('B2', validate_shape=False, initializer=tf.constant(0., shape=[8]))
+            w2 = tf.get_variable('W2', validate_shape=False, initializer=tf.random_uniform([output_size, network_proto.classes2], -0.1, 0.1))
+            b2 = tf.get_variable('B2', validate_shape=False, initializer=tf.constant(0., shape=[network_proto.classes2]))
 
             # the output layer
             time_major_logits2 = tf.matmul(time_major_outputs, w2) + b2
