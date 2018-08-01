@@ -279,9 +279,12 @@ class Trainer:
 
                     out = early_stopping_predictor.predict_raw(validation_datas,
                                                                progress_bar=progress_bar, apply_preproc=False)
-                    pred_texts = [d.sentence for d in out]
+                    pred_texts, pred2_texts = zip(*[(d1.sentence, d2.sentence) for d1, d2 in out])
                     result = Evaluator.evaluate(gt_data=validation_txts, pred_data=pred_texts, progress_bar=progress_bar)
+                    result2 = Evaluator.evaluate(gt_data=second_validation_txts, pred_data=pred2_texts, progress_bar=progress_bar)
                     accuracy = 1 - result["avg_ler"]
+                    accuracy2 = 1 - result2["avg_ler"]
+                    accuracy = (accuracy + accuracy2) / 2
 
                     if accuracy > early_stopping_best_accuracy:
                         early_stopping_best_accuracy = accuracy
