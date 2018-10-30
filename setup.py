@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='calamari_ocr',
-    version='0.1.8',
+    version='0.2.1',
     packages=find_packages(),
     license='GPL-v3.0',
     long_description=open("README.md").read(),
@@ -11,7 +11,7 @@ setup(
     author="Christoph Wick",
     author_email="christoph.wick@informatik.uni-wuerzburg.de",
     url="https://github.com/Calamari-OCR/calamari",
-    download_url='https://github.com/Calamari-OCR/calamari/archive/v0.1.8.tar.gz',
+    download_url='https://github.com/Calamari-OCR/calamari/archive/v0.2.0.tar.gz',
     entry_points={
         'console_scripts': [
             'calamari-eval=calamari_ocr.scripts.eval:main',
@@ -20,9 +20,11 @@ setup(
             'calamari-train=calamari_ocr.scripts.train:main',
             'calamari-cross-fold-train=calamari_ocr.scripts.cross_fold_train:main',
             'calamari-pred_to_json=calamari_ocr.scripts.cross_fold_train:main',
+            'calamari-tensorflow-rename-variables=calamari_ocr.scripts.tensorflow_rename_variables:main',
         ],
     },
-    install_requires=open("requirements.txt").read().split(),
+    python_requires='>=3.5',
+    install_requires=open("requirements.txt").read().split('\n'),
     keywords=['OCR', 'optical character recognition', 'ocropy', 'ocropus', 'kraken'],
     data_files=[('', ["requirements.txt"])],
 )

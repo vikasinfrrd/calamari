@@ -1,5 +1,4 @@
 import argparse
-import codecs
 import os
 
 from bidi.algorithm import get_base_level
@@ -8,13 +7,21 @@ from google.protobuf.json_format import MessageToJson
 
 
 from calamari_ocr.utils.glob import glob_all
-from calamari_ocr.ocr.dataset import FileDataSet
-from calamari_ocr.ocr import Predictor, MultiPredictor
+from calamari_ocr.ocr.datasets import DataSetType, create_dataset, DataSetMode
+from calamari_ocr.ocr import MultiPredictor
 from calamari_ocr.ocr.voting import voter_from_proto
 from calamari_ocr.proto import VoterParams, Predictions
 
 
 def run(args):
+    # check if loading a json file
+    if len(args.files) == 1 and args.files[0].endswith("json"):
+        import json
+        with open(args.files[0], 'r') as f:
+            json_args = json.load(f)
+            for key, value in json_args.items():
+                setattr(args, key, value)
+
     # checks
     if args.extended_prediction_data_format not in ["pred", "json"]:
         raise Exception("Only 'pred' and 'json' are allowed extended prediction data formats")
@@ -30,12 +37,20 @@ def run(args):
     voter = voter_from_proto(voter_params)
 
     # load files
-    input_image_files = sorted(glob_all(args.files))
+    input_image_files = glob_all(args.files)
+    if args.text_files:
+        args.text_files = glob_all(args.text_files)
 
-    # skip invalid files, but keep then so that empty predictions are created
-    dataset = FileDataSet(input_image_files,
-                          skip_invalid=True,
-                          remove_invalid=False)
+    # skip invalid files and remove them, there wont be predictions of invalid files
+    dataset = create_dataset(
+        args.dataset,
+        DataSetMode.PREDICT,
+        input_image_files,
+        args.text_files,
+        skip_invalid=True,
+        remove_invalid=True,
+        args={'text_index': args.pagexml_text_index},
+    )
 
     print("Found {} files in the dataset".format(len(dataset)))
     if len(dataset) == 0:
@@ -46,7 +61,7 @@ def run(args):
     do_prediction = predictor.predict_dataset(dataset, progress_bar=not args.no_progress_bars)
 
     # output the voted results to the appropriate files
-    for (result, sample), filepath in zip(do_prediction, input_image_files):
+    for result, sample in do_prediction:
         for i, p in enumerate(result):
             p.prediction.id = "fold_{}".format(i)
 
@@ -58,15 +73,15 @@ def run(args):
             lr = "\u202A\u202B"
             print("{}: '{}{}{}'".format(sample['id'], lr[get_base_level(sentence)], sentence, "\u202C" ))
 
-        output_dir = args.output_dir if args.output_dir else os.path.dirname(filepath)
+        output_dir = args.output_dir
 
-        with codecs.open(os.path.join(output_dir, sample['id'] + ".pred.txt"), 'w', 'utf-8') as f:
-            f.write(sentence)
+        dataset.store_text(sentence, sample, output_dir=output_dir, extension=".pred.txt")
 
         if args.extended_prediction_data:
             ps = Predictions()
-            ps.line_path = filepath
+            ps.line_path = sample['image_path']
             ps.predictions.extend([prediction] + [r.prediction for r in result])
+            output_dir = output_dir if output_dir else os.path.dirname(sample['image_path'])
             if args.extended_prediction_data_format == "pred":
                 with open(os.path.join(output_dir, sample['id'] + ".pred"), 'wb') as f:
                     f.write(ps.SerializeToString())
@@ -82,6 +97,7 @@ def run(args):
             else:
                 raise Exception("Unknown prediction format.")
 
+    dataset.store()
     print("All files written")
 
 
@@ -90,6 +106,9 @@ def main():
 
     parser.add_argument("--files", nargs="+", required=True, default=[],
                         help="List all image files that shall be processed")
+    parser.add_argument("--text_files", nargs="+", default=None,
+                        help="Optional list of additional text files. E.g. when updating Abbyy prediction, this parameter must be used for the xml files.")
+    parser.add_argument("--dataset", type=DataSetType.from_string, choices=list(DataSetType), default=DataSetType.FILE)
     parser.add_argument("--checkpoint", type=str, nargs="+", default=[],
                         help="Path to the checkpoint without file extension")
     parser.add_argument("-j", "--processes", type=int, default=1,
@@ -110,6 +129,9 @@ def main():
                         help="Extension format: Either pred or json. Note that json will not print logits.")
     parser.add_argument("--no_progress_bars", action="store_true",
                         help="Do not show any progress bars")
+
+    # PageXML extra args
+    parser.add_argument("--pagexml_text_index", default=1)
 
     args = parser.parse_args()
 

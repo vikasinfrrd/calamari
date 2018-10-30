@@ -1,7 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 
-from calamari_ocr.proto import LayerParams, NetworkParams
+from calamari_ocr.proto import NetworkParams
 from .ctc_decoder.default_ctc_decoder import DefaultCTCDecoder
 from .ctc_decoder.fuzzy_ctc_decoder import FuzzyCTCDecoder
 
@@ -36,6 +36,9 @@ class ModelInterface(ABC):
             NetworkParams.CTC_FUZZY: FuzzyCTCDecoder(),
             NetworkParams.CTC_DEFAULT: DefaultCTCDecoder(),
         }[network_proto.ctc]
+
+    def output_to_input_position(self, x):
+        return x
 
     def set_data(self, images, labels=None):
         """ Set the networks data (images, and labels)

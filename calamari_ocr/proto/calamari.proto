@@ -2,20 +2,25 @@ syntax = "proto3";
 
 // Data required for resuming a training process
 message CheckpointParams {
+    int32 version = 25;                                 // Rolling version
+
     ModelParams model = 1;
 
     int32 processes = 2;
     int32 max_iters = 3;
     bool skip_invalid_gt = 4;
-    int32 display = 5;
+    float display = 5;
     int32 stats_size = 6;
     int32 batch_size = 7;
-    int32 checkpoint_frequency = 8;
+    float checkpoint_frequency = 8;
     string output_dir = 9;
     string output_model_prefix = 22;
 
+    bool data_aug_retrain_on_original = 23;        // Retrain the model with only the non augmented data in a second run
+    int32 current_stage = 24;                      // Current training progress: 0 standard, 1 retraining on non aug.
+
     // params for early stopping
-    int32 early_stopping_frequency = 15;                // How often to check on validation data
+    float early_stopping_frequency = 15;                // How often to check on validation data
     int32 early_stopping_nbest = 16;                    // How many models must be worse to stop
     string early_stopping_best_model_prefix = 17;       // Prefix for the best model
     string early_stopping_best_model_output_dir = 21;   // Where to store the best model
@@ -141,6 +146,11 @@ message DataPreprocessorParams {
         FINAL_PREPARATION = 5;
     }
 
+    enum Binarization {
+        GRAY = 0;
+        OTSU = 1;
+    }
+
     Type type = 1;
     repeated DataPreprocessorParams children = 2;
 
@@ -148,6 +158,12 @@ message DataPreprocessorParams {
     int32 range = 4;
     int32 smoothness = 5;
     int32 pad = 6;
+    Binarization binarization = 7;
+
+    bool no_normalize = 8;
+    bool no_invert = 9;
+    bool no_transpose = 10;
+    int32 pad_value = 11;
 }
 
 message TextNormalizerReplacementParams {
@@ -216,8 +232,10 @@ message PredictionCharacter {
 
 message PredictionPosition {
     repeated PredictionCharacter chars = 1;         // All characters at this position with its individual probabilities
-    int32 start = 2;                                // Start of the character in the image (this is usually the center of a letter)
-    int32 end = 3;                                  // End of the character in the image (this is usually the center of a letter)
+    int32 local_start = 2;                          // Start of the character in the prediction
+    int32 local_end = 3;                            // End of the character in the prediction
+    int32 global_start = 4;                         // Start of the character in the image (this is usually the center of a letter)
+    int32 global_end = 5;                           // End of the character in the image (this is usually the center of a letter)
 }
 
 message Prediction {

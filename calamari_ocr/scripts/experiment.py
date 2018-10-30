@@ -9,7 +9,6 @@ import calamari_ocr.scripts.cross_fold_train as cross_fold_train
 from calamari_ocr.scripts.eval import print_confusions, write_xlsx
 from calamari_ocr.utils import glob_all, split_all_ext
 from calamari_ocr.utils.multiprocessing import parallel_map, run, prefix_run_command
-from calamari_ocr.ocr import FileDataSet, Evaluator
 
 # path to the dir of this script to automatically detect the training script
 this_absdir = os.path.dirname(os.path.abspath(inspect.stack()[0][1]))
@@ -43,7 +42,7 @@ def run_for_single_line(args):
     files = args.train_files
     if args.n_lines > 0:
         all_files = glob_all(args.train_files)
-        file = random.sample(all_files, args.n_lines)
+        files = random.sample(all_files, args.n_lines)
 
     # run the cross-fold-training
     setattr(args, "max_parallel_models", args.max_parallel_models)
@@ -143,6 +142,7 @@ def main():
     random.seed(args.seed)
 
     # argument checks
+    args.weights = glob_all(args.weights)
     if len(args.weights) > 1 and len(args.weights) != args.n_folds:
         raise Exception("Either no, one or n_folds (={}) models are required for pretraining but got {}.".format(
             args.n_folds, len(args.weights)

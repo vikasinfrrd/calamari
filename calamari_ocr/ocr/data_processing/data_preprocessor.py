@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-from tqdm import tqdm
 import numpy as np
-import multiprocessing
 
 from calamari_ocr.utils import parallel_map
 
@@ -22,9 +20,12 @@ class DataPreprocessor(ABC):
         else:
             raise Exception("Unknown instance of txts: {}. Supported list and str".format(type(data)))
 
+    def local_to_global_pos(self, x, params):
+        return x
+
     @abstractmethod
     def _apply_single(self, data):
-        pass
+        return data, None
 
 
 class NoopDataPreprocessor(DataPreprocessor):
@@ -32,7 +33,7 @@ class NoopDataPreprocessor(DataPreprocessor):
         super().__init__()
 
     def _apply_single(self, data):
-        return data
+        return data, None
 
 
 class MultiDataProcessor(DataPreprocessor):
@@ -44,7 +45,16 @@ class MultiDataProcessor(DataPreprocessor):
         self.sub_processors.append(processor)
 
     def _apply_single(self, data):
+        stacked_params = []
         for proc in self.sub_processors:
-            data = proc._apply_single(data)
+            data, params = proc._apply_single(data)
+            stacked_params.append(params)
 
-        return data
+        return data, stacked_params
+
+    def local_to_global_pos(self, x, params):
+        assert(len(params) == len(self.sub_processors))
+        for i in reversed(range(len(self.sub_processors))):
+            x = self.sub_processors[i].local_to_global_pos(x, params[i])
+
+        return x

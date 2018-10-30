@@ -36,15 +36,15 @@ class TensorflowModel(ModelInterface):
 
             # create network and solver (if train)
             if graph_type == "train":
-                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded = \
+                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded, self.scale_factor = \
                     self.create_network(self.inputs, self.input_seq_len, self.dropout_rate, reuse_variables=reuse_weights)
                 self.train_op, self.loss, self.cer = self.create_solver(self.targets, self.time_major_logits, self.logits, self.output_seq_len, self.decoded)
             elif graph_type == "test":
-                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded = \
+                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded, self.scale_factor = \
                     self.create_network(self.inputs, self.input_seq_len, self.dropout_rate, reuse_variables=reuse_weights)
                 self.cer = self.create_cer(self.decoded, self.targets)
             else:
-                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded = \
+                self.output_seq_len, self.time_major_logits, self.time_major_softmax, self.logits, self.softmax, self.decoded, self.sparse_decoded, self.scale_factor = \
                     self.create_network(self.inputs, self.input_seq_len, self.dropout_rate, reuse_variables=reuse_weights)
 
     def is_gpu_available(self):
@@ -64,13 +64,14 @@ class TensorflowModel(ModelInterface):
         batch_size = tf.shape(inputs)[0]
         gpu_enabled = self.gpu_available
 
-        with tf.variable_scope("", reuse=reuse_variables) as scope:
+        with tf.variable_scope("cnn_lstm", reuse=reuse_variables) as scope:
             no_layers = len(network_proto.layers) == 0
             if not no_layers:
                 has_conv_or_pool = network_proto.layers[0].type != LayerParams.LSTM
             else:
                 has_conv_or_pool = False
 
+            factor = 1
             if has_conv_or_pool:
                 cnn_inputs = tf.reshape(inputs, [batch_size, -1, network_proto.features, 1])
                 shape = seq_len, network_proto.features
@@ -102,6 +103,7 @@ class TensorflowModel(ModelInterface):
 
                         shape = (tf.to_int32(shape[0] // layer.stride.x),
                                  shape[1] // layer.stride.y)
+                        factor *= layer.stride.x
                     else:
                         raise Exception("Unknown layer of type %s" % layer.type)
 
@@ -131,13 +133,13 @@ class TensorflowModel(ModelInterface):
                     def get_lstm_cell(num_hidden):
                         return cudnn_rnn.CudnnCompatibleLSTMCell(num_hidden, reuse=reuse_variables)
 
-                    fw, bw = zip(*[(get_lstm_cell(hidden_nodes), get_lstm_cell(hidden_nodes)) for lstm in lstm_layers])
+                    fw, bw = zip(*[(get_lstm_cell(hidden_nodes), get_lstm_cell(hidden_nodes)) for _ in lstm_layers])
 
                     time_major_outputs, output_fw, output_bw \
                         = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(list(fw), list(bw), time_major_inputs,
                                                                          sequence_length=lstm_seq_len,
                                                                          dtype=tf.float32,
-                                                                         scope="{}cudnn_lstm/stack_bidirectional_rnn".format(scope.name),
+                                                                         scope="cudnn_lstm/stack_bidirectional_rnn",
                                                                          time_major=True,
                                                                          )
 
@@ -212,10 +214,10 @@ class TensorflowModel(ModelInterface):
                 tf.identity(decoded.dense_shape, name="decoded_shape"),
             )
 
-            return lstm_seq_len, time_major_logits, time_major_softmax, logits, softmax, decoded, sparse_decoded
+            return lstm_seq_len, time_major_logits, time_major_softmax, logits, softmax, decoded, sparse_decoded, factor
 
     def create_placeholders(self):
-        with tf.variable_scope("", reuse=False) as scope:
+        with tf.variable_scope("cnn_lstm", reuse=False) as scope:
             inputs = tf.placeholder(tf.float32, shape=(None, None, self.network_proto.features), name="inputs")
             seq_len = tf.placeholder(tf.int32, shape=(None,), name="seq_len")
             targets = tf.sparse_placeholder(tf.int32, shape=(None, None), name="targets")
@@ -224,7 +226,7 @@ class TensorflowModel(ModelInterface):
         return inputs, seq_len, targets, dropout_rate
 
     def create_dataset_inputs(self, batch_size, line_height, buffer_size=1000):
-        with tf.variable_scope("", reuse=False):
+        with tf.variable_scope("cnn_lstm", reuse=False):
             def gen():
                 for i, l in zip(self.raw_images, self.raw_labels):
                     if self.graph_type == "train" and len(l) == 0:
@@ -361,8 +363,8 @@ class TensorflowModel(ModelInterface):
             saver.restore(self.session, filepath)
 
     def realign_model_labels(self, indices_to_delete, indices_to_add):
-        W = self.graph.get_tensor_by_name("W:0")
-        B = self.graph.get_tensor_by_name("B:0")
+        W = self.graph.get_tensor_by_name("cnn_lstm/W:0")
+        B = self.graph.get_tensor_by_name("cnn_lstm/B:0")
 
         # removed desired entries from the data
         # IMPORTANT: Blank index is last in tensorflow but 0 in indices!
@@ -526,3 +528,6 @@ class TensorflowModel(ModelInterface):
             out[x].append(value + shift_values)
 
         return out
+
+    def output_to_input_position(self, x):
+        return x * self.scale_factor

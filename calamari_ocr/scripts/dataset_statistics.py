@@ -1,17 +1,15 @@
 import argparse
-import os
 
 import numpy as np
 
 from calamari_ocr.utils import glob_all, split_all_ext
-from calamari_ocr.ocr import FileDataSet
-from calamari_ocr.ocr.data_processing import data_processor_from_proto
-from calamari_ocr.proto import DataPreprocessorParams
+from calamari_ocr.ocr import create_dataset, DataSetType, DataSetMode
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--files", nargs="+", required=True,
                         help="List of all image files with corresponding gt.txt files")
+    parser.add_argument("--dataset", type=DataSetType.from_string, choices=list(DataSetType), default=DataSetType.FILE)
     parser.add_argument("--line_height", type=int, default=48,
                         help="The line height")
     parser.add_argument("--pad", type=int, default=16,
@@ -23,7 +21,10 @@ def main():
     image_files = glob_all(args.files)
     gt_files = [split_all_ext(p)[0] + ".gt.txt" for p in image_files]
 
-    ds = FileDataSet(images=image_files, texts=gt_files, non_existing_as_empty=True)
+    ds = create_dataset(
+        args.dataset,
+        DataSetMode.TRAIN,
+        images=image_files, texts=gt_files, non_existing_as_empty=True)
 
     print("Loading {} files".format(len(image_files)))
     ds.load_samples(processes=1, progress_bar=True)

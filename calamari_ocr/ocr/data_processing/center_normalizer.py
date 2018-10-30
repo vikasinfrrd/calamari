@@ -1,6 +1,6 @@
 import numpy as np
 from calamari_ocr.ocr.data_processing.data_preprocessor import DataPreprocessor
-from scipy.ndimage import measurements, interpolation, filters
+from scipy.ndimage import interpolation, filters
 
 
 def scale_to_h(img, target_height, order=1, dtype=np.dtype('f'), cval=0):
@@ -20,14 +20,15 @@ def scale_to_h(img, target_height, order=1, dtype=np.dtype('f'), cval=0):
 
 
 class CenterNormalizer(DataPreprocessor):
-    def __init__(self, target_height=48, params=(4, 1.0, 0.3), debug=False):
+    def __init__(self, params, extra_params=(4, 1.0, 0.3), debug=False):
         self.debug = debug
-        self.target_height = target_height
-        self.range, self.smoothness, self.extra = params
+        self.target_height = params.line_height if params.line_height else 48
+        self.range, self.smoothness, self.extra = extra_params
         super().__init__()
 
     def _apply_single(self, data):
-        return self.normalize(data, cval=np.amax(data))
+        out, params = self.normalize(data, cval=np.amax(data))
+        return out, params
 
     def set_height(self, target_height):
         self.target_height = target_height
@@ -36,7 +37,6 @@ class CenterNormalizer(DataPreprocessor):
         h, w = line.shape
         smoothed = filters.gaussian_filter(line, (h * 0.5, h * self.smoothness), mode='constant')
         smoothed += 0.001 * filters.uniform_filter(smoothed, (h * 0.5, w), mode='constant')
-        shape = (h, w)
         a = np.argmax(smoothed, axis=0)
         a = filters.gaussian_filter(a, h * self.extra)
         center = np.array(a, 'i')
@@ -69,13 +69,21 @@ class CenterNormalizer(DataPreprocessor):
     def normalize(self, img, order=1, dtype=np.dtype('f'), cval=0):
         # resize the image to a appropriate height close to the target height to speed up dewarping
         intermediate_height = int(self.target_height * 1.5)
+        m1 = 1
         if intermediate_height < img.shape[0]:
+            m1 = intermediate_height / img.shape[0]
             img = scale_to_h(img, intermediate_height, order=order, dtype=dtype, cval=cval)
 
         # dewarp
         dewarped = self.dewarp(img, cval=cval, dtype=dtype)
 
+        t = dewarped.shape[0] - img.shape[0]
         # scale to target height
         scaled = scale_to_h(dewarped, self.target_height, order=order, dtype=dtype, cval=cval)
-        return scaled
+        m2 = scaled.shape[1] / dewarped.shape[1]
+        return scaled, (m1, m2, t)
+
+    def local_to_global_pos(self, x, params):
+        m1, m2, t = params
+        return x / m1 / m2
 

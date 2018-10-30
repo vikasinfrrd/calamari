@@ -1,12 +1,11 @@
 import argparse
+import os
 
-from calamari_ocr.utils.glob import glob_all
-from calamari_ocr.utils.path import split_all_ext
-from calamari_ocr.ocr.dataset import FileDataSet
+from calamari_ocr.utils import glob_all, split_all_ext, keep_files_with_same_file_name
+from calamari_ocr.ocr.datasets import create_dataset, DataSetType, DataSetMode
 from calamari_ocr.ocr.augmentation.data_augmenter import SimpleDataAugmenter
 from calamari_ocr.ocr import Trainer
-from calamari_ocr.ocr.data_processing.default_data_preprocessor import DefaultDataPreprocessor
-from calamari_ocr.ocr.text_processing import DefaultTextPreprocessor, text_processor_from_proto, BidiTextProcessor, \
+from calamari_ocr.ocr.text_processing import \
     default_text_normalizer_params, default_text_regularizer_params
 
 from calamari_ocr.proto import CheckpointParams, DataPreprocessorParams, TextProcessorParams, \
@@ -18,6 +17,11 @@ def setup_train_args(parser, omit=[]):
         parser.add_argument("--files", nargs="+",
                             help="List all image files that shall be processed. Ground truth fils with the same "
                                  "base name but with '.gt.txt' as extension are required at the same location")
+        parser.add_argument("--text_files", nargs="+", default=None,
+                            help="Optional list of GT files if they are in other directory")
+        parser.add_argument("--gt_extension", default=None,
+                            help="Default extension of the gt files (expected to exist in same dir)")
+        parser.add_argument("--dataset", type=DataSetType.from_string, choices=list(DataSetType), default=DataSetType.FILE)
 
     parser.add_argument("--seed", type=int, default="0",
                         help="Seed for random operations. If negative or zero a 'random' seed is used")
@@ -31,12 +35,15 @@ def setup_train_args(parser, omit=[]):
                         help="Padding (left right) of the line")
     parser.add_argument("--num_threads", type=int, default=1,
                         help="The number of threads to use for all operations")
-    parser.add_argument("--display", type=int, default=1,
-                        help="Frequency of how often an output shall occur during training")
+    parser.add_argument("--display", type=float, default=100,
+                        help="Frequency of how often an output shall occur during training. If 0 < display <= 1 "
+                             "the display is in units of epochs.")
     parser.add_argument("--batch_size", type=int, default=1,
                         help="The batch size to use for training")
-    parser.add_argument("--checkpoint_frequency", type=int, default=1000,
-                        help="The frequency how often to write checkpoints during training")
+    parser.add_argument("--checkpoint_frequency", type=float, default=-1,
+                        help="The frequency how often to write checkpoints during training. If 0 < value <= 1 the "
+                             "unit is in epochs, thus relative to the number of training examples."
+                             "If -1, the early_stopping_frequency will be used.")
     parser.add_argument("--max_iters", type=int, default=1000000,
                         help="The number of iterations for training. "
                              "If using early stopping, this is the maximum number of iterations")
@@ -79,10 +86,18 @@ def setup_train_args(parser, omit=[]):
     if "validation" not in omit:
         parser.add_argument("--validation", type=str, nargs="+",
                             help="Validation line files used for early stopping")
+        parser.add_argument("--validation_text_files", nargs="+", default=None,
+                            help="Optional list of validation GT files if they are in other directory")
+        parser.add_argument("--validation_extension", default=None,
+                            help="Default extension of the gt files (expected to exist in same dir)")
+        parser.add_argument("--validation_dataset", type=DataSetType.from_string, choices=list(DataSetType), default=DataSetType.FILE)
 
-    parser.add_argument("--early_stopping_frequency", type=int, default=-1,
-                        help="The frequency of early stopping. If -1, the checkpoint_frequency will be used")
-    parser.add_argument("--early_stopping_nbest", type=int, default=10,
+    parser.add_argument("--early_stopping_frequency", type=float, default=0.5,
+                        help="The frequency of early stopping. By default the checkpoint frequency uses the early "
+                             "stopping frequency. By default (value = 0.5) the early stopping frequency equates to a "
+                             "half epoch. If 0 < value <= 1 the frequency has the unit of an epoch (relative to "
+                             "number of training data).")
+    parser.add_argument("--early_stopping_nbest", type=int, default=5,
                         help="The number of models that must be worse than the current best model to stop")
     if "early_stopping_best_model_prefix" not in omit:
         parser.add_argument("--early_stopping_best_model_prefix", type=str, default="best",
@@ -92,6 +107,10 @@ def setup_train_args(parser, omit=[]):
                             help="Path where to store the best model. Default is output_dir")
     parser.add_argument("--n_augmentations", type=int, default=0,
                         help="Number of data augmentation per line (done before training)")
+    parser.add_argument("--only_train_on_augmented", action="store_true", default=False,
+                        help="When training with augmentations usually the model is retrained in a second run with "
+                             "only the non augmented data. This will take longer. Use this flag to disable this "
+                             "behavior.")
 
     # backend specific params
     parser.add_argument("--fuzzy_ctc_library_path", type=str, default="",
@@ -127,28 +146,58 @@ def run(args):
         with open(f) as txt:
             whitelist += list(txt.read())
 
+    if args.gt_extension is None:
+        args.gt_extension = DataSetType.gt_extension(args.dataset)
+
+    if args.validation_extension is None:
+        args.validation_extension = DataSetType.gt_extension(args.validation_dataset)
+
     # Training dataset
     print("Resolving input files")
-    input_image_files = glob_all(args.files)
-    gt_txt_files = [split_all_ext(f)[0] + ".gt.txt" for f in input_image_files]
+    input_image_files = sorted(glob_all(args.files))
+    if not args.text_files:
+        gt_txt_files = [split_all_ext(f)[0] + args.gt_extension for f in input_image_files]
+    else:
+        gt_txt_files = sorted(glob_all(args.text_files))
+        input_image_files, gt_txt_files = keep_files_with_same_file_name(input_image_files, gt_txt_files)
+        for img, gt in zip(input_image_files, gt_txt_files):
+            if split_all_ext(os.path.basename(img))[0] != split_all_ext(os.path.basename(gt))[0]:
+                raise Exception("Expected identical basenames of file: {} and {}".format(img, gt))
 
     if len(set(gt_txt_files)) != len(gt_txt_files):
         raise Exception("Some image are occurring more than once in the data set.")
 
-    dataset = FileDataSet(input_image_files, gt_txt_files, skip_invalid=not args.no_skip_invalid_gt)
+    dataset = create_dataset(
+        args.dataset,
+        DataSetMode.TRAIN,
+        images=input_image_files,
+        texts=gt_txt_files,
+        skip_invalid=not args.no_skip_invalid_gt
+    )
     print("Found {} files in the dataset".format(len(dataset)))
 
     # Validation dataset
     if args.validation:
         print("Resolving validation files")
         validation_image_files = glob_all(args.validation)
-        val_txt_files = [split_all_ext(f)[0] + ".gt.txt" for f in validation_image_files]
+        if not args.validation_text_files:
+            val_txt_files = [split_all_ext(f)[0] + args.validation_extension for f in validation_image_files]
+        else:
+            val_txt_files = sorted(glob_all(args.validation_text_files))
+            validation_image_files, val_txt_files = keep_files_with_same_file_name(validation_image_files, val_txt_files)
+            for img, gt in zip(validation_image_files, val_txt_files):
+                if split_all_ext(os.path.basename(img))[0] != split_all_ext(os.path.basename(gt))[0]:
+                    raise Exception("Expected identical basenames of validation file: {} and {}".format(img, gt))
 
         if len(set(val_txt_files)) != len(val_txt_files):
             raise Exception("Some validation images are occurring more than once in the data set.")
 
-        validation_dataset = FileDataSet(validation_image_files, val_txt_files,
-                                         skip_invalid=not args.no_skip_invalid_gt)
+        validation_dataset = create_dataset(
+            args.validation_dataset,
+            DataSetMode.TRAIN,
+            images=validation_image_files,
+            texts=val_txt_files,
+            skip_invalid=not args.no_skip_invalid_gt)
         print("Found {} files in the validation dataset".format(len(validation_dataset)))
     else:
         validation_dataset = None
@@ -158,14 +207,15 @@ def run(args):
     params.max_iters = args.max_iters
     params.stats_size = args.stats_size
     params.batch_size = args.batch_size
-    params.checkpoint_frequency = args.checkpoint_frequency
+    params.checkpoint_frequency = args.checkpoint_frequency if args.checkpoint_frequency >= 0 else args.early_stopping_frequency
     params.output_dir = args.output_dir
     params.output_model_prefix = args.output_model_prefix
     params.display = args.display
     params.skip_invalid_gt = not args.no_skip_invalid_gt
     params.processes = args.num_threads
+    params.data_aug_retrain_on_original = not args.only_train_on_augmented
 
-    params.early_stopping_frequency = args.early_stopping_frequency if args.early_stopping_frequency >= 0 else args.checkpoint_frequency
+    params.early_stopping_frequency = args.early_stopping_frequency
     params.early_stopping_nbest = args.early_stopping_nbest
     params.early_stopping_best_model_prefix = args.early_stopping_best_model_prefix
     params.early_stopping_best_model_output_dir = \
